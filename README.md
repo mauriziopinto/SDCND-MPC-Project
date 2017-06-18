@@ -1,5 +1,70 @@
-# CarND-Controls-MPC
+# SDCND-Controls-MPC
 Self-Driving Car Engineer Nanodegree Program
+
+## Summary
+
+This repository contains a C++ implementation of a model predictive controller to be used with the Udacity simulator available at https://github.com/udacity/self-driving-car-sim. It has been implemented as part of the Udacity Self-Driving Car Engineer Nanodegree Program.
+
+The goal of the project was to implement and configure the MPC in such a way that the car successfully drives a lap around the track. No tire may leave the drivable portion of the track surface. The car may not pop up onto ledges or roll over any surfaces that would otherwise be considered unsafe (if humans were in the vehicle). See video on Youtube for a test lap:
+
+[![SDCND - Project 9 - Model Predictive Control ](https://img.youtube.com/vi/1vvB_LUanaU/0.jpg)](https://www.youtube.com/watch?v=1vvB_LUanaU "SDCND - Project 9 - Model Predictive Control ")
+
+## The model
+
+The model used in this project is a non-linear kinematic bicycle model: it does not take into account tire forces, gravity, and mass.
+
+The equations describing this model can be found in MPC.cpp:
+
+```
+fg[2 + x_start + i] = x1 - (x0 + v0*CppAD::cos(psi0)*dt);
+fg[2 + y_start + i] = y1 - (y0 + v0*CppAD::sin(psi0)*dt);
+fg[2 + psi_start + i] = psi1 - (psi0 - v0*delta0 / Lf*dt);
+fg[2 + v_start + i] = v1 - (v0 + a0*dt);
+fg[2 + cte_start + i] = cte1 - ((f0 - y0) + (v0 * CppAD::sin(epsi0) * dt));
+fg[2 + epsi_start + i] = epsi1 - ((psi0 - psides0) - v0*delta0 / Lf*dt);
+```
+
+The Lf costant (2.67) was obtained by measuring the radius formed by running the vehicle in the simulator around in a circle with a constant steering angle and velocity on a flat terrain. Lf was tuned until the the radius formed by the simulating the model presented in the classroom matched the previous radius. This is the length from front to CoG that has a similar radius.
+
+## Timestep Length and Elapsed Duration (N & dt)
+
+The N and dt values are used to define the prediction horizon (T = N * dt), in other words how many seconds the MPC should look into the future and predict the vehicle trajectory. A trade-off must be found between vehicle stability and computational load. After some tries I found that the following values allow the car to drive safely up to 110 mph on the test track:
+
+* N = 10
+* dt = 1
+
+In order to cope with higher values for N and dt, I tried as well to allow the polynomial fitting library to spend more time ("Numeric max_cpu_time"), but this did not lead to any significant improvement.
+
+## Polynomial Fitting and MPC Preprocessing
+
+In order to simplify the equation, all values are first transformed to the car's reference system (shift + rotation). This makes possible to have x, y, and psi initially set to 0:
+
+```
+state << 0, 0, 0, v, cte, epsi;
+```
+
+Please note that, when dealing with latency, the array of values defining the state are:
+
+```
+state << x_latency, y_latency, psi_latency, v, cte, epsi;
+```
+
+## Model Predictive Control with Latency
+
+In order to better simulate a real vehicle, the MPC implementation allows to set a value for the actuators' latency. In order to correctly handle that scenario, I took into account the latency in the following code:
+
+```
+int latency = 100; // latency in milliseconds between stimulus and actuation
+double latency_in_seconds = (double) latency / 1000; // latency in seconds, to be used in the calculations
+
+double x_latency = 0 + v * cos(0) * latency_in_seconds; // x0 + v * cos(psi0) * dt
+double y_latency = 0 + v * sin(0) * latency_in_seconds; // y0 + v * sin(psi0) * dt
+double psi_latency = 0 - v * steer_value / Lf * latency_in_seconds; // psi0 - v * steer_value / Lf * dt
+
+v += throttle_value * latency_in_seconds; // predicted v after dt
+```
+
+Even though this is a naive solution, it works quite well for latency values in the range 0-200 ms.
 
 ---
 
@@ -49,67 +114,3 @@ Self-Driving Car Engineer Nanodegree Program
 2. Make a build directory: `mkdir build && cd build`
 3. Compile: `cmake .. && make`
 4. Run it: `./mpc`.
-
-## Tips
-
-1. It's recommended to test the MPC on basic examples to see if your implementation behaves as desired. One possible example
-is the vehicle starting offset of a straight line (reference). If the MPC implementation is correct, after some number of timesteps
-(not too many) it should find and track the reference line.
-2. The `lake_track_waypoints.csv` file has the waypoints of the lake track. You could use this to fit polynomials and points and see of how well your model tracks curve. NOTE: This file might be not completely in sync with the simulator so your solution should NOT depend on it.
-3. For visualization this C++ [matplotlib wrapper](https://github.com/lava/matplotlib-cpp) could be helpful.
-
-## Editor Settings
-
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
-
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
-
-## Code Style
-
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
-
-## Project Instructions and Rubric
-
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
-
-More information is only accessible by people who are already enrolled in Term 2
-of CarND. If you are enrolled, see [the project page](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/f1820894-8322-4bb3-81aa-b26b3c6dcbaf/lessons/b1ff3be0-c904-438e-aad3-2b5379f0e0c3/concepts/1a2255a0-e23c-44cf-8d41-39b8a3c8264a)
-for instructions and the project rubric.
-
-## Hints!
-
-* You don't have to follow this directory structure, but if you do, your work
-  will span all of the .cpp files here. Keep an eye out for TODOs.
-
-## Call for IDE Profiles Pull Requests
-
-Help your fellow students!
-
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to we ensure
-that students don't feel pressured to use one IDE or another.
-
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
-
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
-
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
-
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
-
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
